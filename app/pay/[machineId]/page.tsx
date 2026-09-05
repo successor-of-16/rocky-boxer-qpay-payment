@@ -1,5 +1,32 @@
 import Image from "next/image";
 import { createClient } from "@supabase/supabase-js";
+import PaymentStatusListener from "./PaymentStatusListener"; // Adjust path if needed
+
+const BANK_ICONS: Record<string, string> = {
+  "Khan bank": "https://qpay.mn/q/img/khanbank.webp",
+  "Trade and Development bank": "https://qpay.mn/q/img/tdb.webp",
+  "Social Pay": "https://qpay.mn/q/img/socialpay.webp",
+  "State bank 3.0": "https://qpay.mn/q/img/statebank.webp",
+  "Xac bank": "https://qpay.mn/q/img/xacbank.webp",
+  "Capitron bank": "https://qpay.mn/q/img/capitron-bank.webp",
+  "Bogd bank": "https://qpay.mn/q/img/bogd-bank.webp",
+  "National investment bank": "https://qpay.mn/q/img/nibank.webp",
+  "Most money": "https://qpay.mn/q/img/most-money.webp",
+  "Trans bank": "https://qpay.mn/q/img/transbank.webp",
+  "M bank": "https://qpay.mn/q/img/mbank.webp",
+  "Arig bank": "https://qpay.mn/q/img/arig-bank.webp",
+  "Chinggis khaan bank": "https://qpay.mn/q/img/ckbank.webp",
+  Monpay: "https://qpay.mn/q/img/monpay.webp",
+  Toki: "https://qpay.mn/q/img/tokipay.webp",
+  "Ard App": "https://qpay.mn/q/img/ard.webp?v=2",
+  Hipay: "https://qpay.mn/q/img/hipay.webp",
+  "Happy Pay": "https://qpay.mn/q/img/tdbwallet.webp",
+  Sono: "https://qpay.mn/q/img/sono.webp",
+  PayOn: "https://qpay.mn/q/img/payon.webp",
+  Tino: "https://qpay.mn/q/img/tino.webp",
+  "Pass.mn": "https://qpay.mn/q/img/pass.webp",
+  "qPay wallet": "https://qpay.mn/q/img/qpay-wallet.webp",
+};
 
 // Type definitions matching the GPG API response envelope
 interface GPGBankLink {
@@ -30,15 +57,19 @@ interface GPGInvoiceResponse {
   data: GPGInvoiceData;
 }
 
-/**
- * Server-side function to create a GPG invoice using HMAC-SHA256 signing
- */
+// Helper for case-insensitive bank icon lookup
+const getBankIcon = (bankName: string) => {
+  const key = Object.keys(BANK_ICONS).find(
+    (k) => k.toLowerCase() === bankName.toLowerCase(),
+  );
+  return key ? BANK_ICONS[key] : "https://qpay.mn/q/img/qpay-wallet.webp";
+};
+
 async function getGPGInvoice(machineId: string): Promise<GPGInvoiceData> {
   const supabaseUrl = process.env.SUPABASE_URL!;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
   const supabase = createClient(supabaseUrl, supabaseKey);
 
-  // 1. Get machine's price_per_set from the database
   const { data: machine, error: machineError } = await supabase
     .from("machines")
     .select("price_per_set")
@@ -47,7 +78,7 @@ async function getGPGInvoice(machineId: string): Promise<GPGInvoiceData> {
 
   if (machineError || !machine) {
     throw new Error(
-      `Failed to fetch machine price: ${machineError?.message || "Machine not found"}`,
+      `Машины үнийн мэдээлэл авахад алдаа гарлаа: ${machineError?.message || "Машин олдсонгүй"}`,
     );
   }
 
@@ -55,29 +86,24 @@ async function getGPGInvoice(machineId: string): Promise<GPGInvoiceData> {
   const baseUrl = process.env.GPG_BASE_URL || "https://dev-api.gpaygateway.com";
   const apiKey = process.env.GPG_API_KEY;
   const secret = process.env.GPG_SIGNING_SECRET;
-  //   const callbackUrl =
-  //     process.env.GPG_CALLBACK_URL || "https://yoursite.com/api/gpg/callback";
 
   if (!apiKey || !secret) {
-    throw new Error("GPG credentials are not configured in .env.local");
+    throw new Error("GPG тохиргоо .env.local файл дээр хийгдээгүй байна.");
   }
 
-  // 2. Prepare payload
   const merchantOrderId = `MACHINE_${machineId}_${Date.now()}`;
   const payload = {
     merchantOrderId,
     amount: pricePerSet,
     customerId: `MACHINE_${machineId}`,
-    customerName: "Machine User",
-    description: `Payment for machine ${machineId}`,
-    // callbackUrl,
+    customerName: "Машины хэрэглэгч",
+    description: `Машин ${machineId}-ийн төлбөр`,
   };
 
   const body = JSON.stringify(payload);
   const method = "POST";
   const path = "/api/v1/terminal/invoices";
 
-  // 3. Generate HMAC-SHA256 Signature
   const ts = new Date().toISOString();
   const canonical = `${method}\n${path}\n${ts}\n${body}`;
 
@@ -103,7 +129,6 @@ async function getGPGInvoice(machineId: string): Promise<GPGInvoiceData> {
     .join("");
   const signature = `sha256=${hashHex}`;
 
-  // 4. Execute Request
   const resp = await fetch(`${baseUrl}${path}`, {
     method,
     headers: {
@@ -118,22 +143,19 @@ async function getGPGInvoice(machineId: string): Promise<GPGInvoiceData> {
   if (!resp.ok) {
     const errorText = await resp.text();
     throw new Error(
-      `Failed to create GPG invoice: ${resp.status} ${errorText}`,
+      `GPG нэхэмжлэл үүсгэхэд алдаа гарлаа: ${resp.status} ${errorText}`,
     );
   }
 
   const responseData: GPGInvoiceResponse = await resp.json();
 
   if (!responseData.success || !responseData.data) {
-    throw new Error("Invalid response format from GPG API");
+    throw new Error("GPG API-аас буцаж ирсэн хариу буруу байна.");
   }
 
   return responseData.data;
 }
 
-/**
- * Next.js Server Component
- */
 export default async function PaymentPage({
   params,
 }: {
@@ -150,10 +172,9 @@ export default async function PaymentPage({
     error =
       err instanceof Error
         ? err.message
-        : "An unknown error occurred while fetching payment options.";
+        : "Төлбөрийн сонголтуудыг ачаалах үед тодорхойгүй алдаа гарлаа.";
   }
 
-  // Helper to ensure base64 image has correct prefix for Next.js Image component
   const qrImageSrc = invoiceData?.qr_image
     ? invoiceData.qr_image.startsWith("data:")
       ? invoiceData.qr_image
@@ -165,14 +186,14 @@ export default async function PaymentPage({
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden">
         {/* Header */}
         <div className="bg-blue-600 p-6 text-center">
-          <h1 className="text-2xl font-bold text-white">Machine Payment</h1>
+          <h1 className="text-2xl font-bold text-white">Машины төлбөр</h1>
           <p className="text-blue-100 mt-1">
-            Machine ID:{" "}
+            Машины дугаар:{" "}
             <span className="font-mono font-semibold">{machineId}</span>
           </p>
           {invoiceData && (
             <p className="text-blue-100 text-sm mt-1">
-              Amount:{" "}
+              Дүн:{" "}
               <span className="font-semibold">
                 {invoiceData.amount.toLocaleString()} ₮
               </span>
@@ -184,24 +205,24 @@ export default async function PaymentPage({
         <div className="p-6">
           {error ? (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-center">
-              <p className="font-semibold">Configuration Error</p>
+              <p className="font-semibold">Тохиргооны алдаа</p>
               <p className="text-sm mt-1">{error}</p>
             </div>
           ) : !invoiceData ? (
-            <p className="text-gray-500 text-center">
-              Loading payment options...
+            <p className="text-gray-500 text-center py-8">
+              Төлбөрийн сонголтуудыг ачаалж байна...
             </p>
           ) : (
-            <div className="space-y-6">
-              {/* QR Code Display */}
+            <div className="space-y-6 flex flex-col items-center">
+              {/* QR Code Display: Hidden on mobile, visible on tablet (md) and desktop (lg) */}
               {qrImageSrc && (
-                <div className="flex flex-col items-center space-y-2">
-                  <p className="text-gray-600 text-sm font-medium">
-                    Scan QR Code to Pay
+                <div className="hidden md:block flex flex-col items-center space-y-2">
+                  <p className="text-gray-600 text-sm font-medium text-center">
+                    QR кодыг уншуулан төлнө үү
                   </p>
                   <Image
                     src={qrImageSrc}
-                    alt="Payment QR Code"
+                    alt="Төлбөрийн QR код"
                     width={220}
                     height={220}
                     className="rounded-lg border border-gray-200 p-2 bg-white"
@@ -210,44 +231,42 @@ export default async function PaymentPage({
                 </div>
               )}
 
-              {/* Bank Deep Links */}
+              {/* Bank Deep Links: Visible on mobile and tablet, hidden on desktop (lg) */}
               {invoiceData.urls && invoiceData.urls.length > 0 && (
-                <div className="space-y-3">
-                  <p className="text-gray-600 text-center text-sm font-medium">
-                    Or select a banking app:
+                <div className="block lg:hidden space-y-3">
+                  <p className="text-gray-600 text-center text-sm font-medium md:block hidden">
+                    Эсвэл банкны апп-аа сонгоно уу:
                   </p>
-                  <ul className="space-y-3">
-                    {invoiceData.urls.map((bank, index) => (
-                      <li key={index}>
+                  {/* Compact Grid Layout */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {invoiceData.urls.map((bank, index) => {
+                      const iconUrl = getBankIcon(bank.name);
+                      return (
                         <a
+                          key={index}
                           href={bank.link}
-                          className="flex items-center p-3 border border-gray-200 rounded-xl hover:bg-blue-50 hover:border-blue-300 transition-all duration-200 group"
+                          className="flex items-center gap-2 p-2 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-all duration-200 group"
                         >
-                          <div className="flex-1">
-                            <p className="font-semibold text-gray-800 group-hover:text-blue-700">
+                          <Image
+                            src={iconUrl}
+                            alt={bank.name}
+                            width={32}
+                            height={32}
+                            className="rounded object-contain bg-white flex-shrink-0"
+                            unoptimized
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-sm text-gray-800 group-hover:text-blue-700 truncate">
                               {bank.name}
                             </p>
-                            <p className="text-xs text-gray-500">
-                              Code: {bank.code}
+                            <p className="text-xs text-gray-500 truncate">
+                              {bank.code}
                             </p>
                           </div>
-                          <svg
-                            className="w-5 h-5 text-gray-400 group-hover:text-blue-500"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M9 5l7 7-7 7"
-                            />
-                          </svg>
                         </a>
-                      </li>
-                    ))}
-                  </ul>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
@@ -257,13 +276,14 @@ export default async function PaymentPage({
                   href={invoiceData.cardPaymentUrl}
                   className="block w-full bg-gray-900 hover:bg-gray-800 text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 text-center"
                 >
-                  Pay with Card
+                  Картаар төлөх
                 </a>
               )}
 
-              <p className="text-xs text-gray-400 text-center mt-4">
-                Order Reference: {invoiceData.merchantOrderId}
-              </p>
+              {/* Supabase Realtime Listener */}
+              <PaymentStatusListener
+                merchantOrderId={invoiceData.merchantOrderId}
+              />
             </div>
           )}
         </div>
