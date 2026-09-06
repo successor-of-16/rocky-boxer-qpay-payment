@@ -214,9 +214,13 @@ export default async function PaymentPage({
             </p>
           ) : (
             <div className="space-y-6 flex flex-col items-center">
+              {/* Supabase Realtime Listener */}
+              <PaymentStatusListener
+                merchantOrderId={invoiceData.merchantOrderId}
+              />
               {/* QR Code Display: Hidden on mobile, visible on tablet (md) and desktop (lg) */}
               {qrImageSrc && (
-                <div className="hidden md:block flex flex-col items-center space-y-2">
+                <div className="hidden md:flex flex-col items-center space-y-2">
                   <p className="text-gray-600 text-sm font-medium text-center">
                     QR кодыг уншуулан төлнө үү
                   </p>
@@ -279,11 +283,6 @@ export default async function PaymentPage({
                   Картаар төлөх
                 </a>
               )}
-
-              {/* Supabase Realtime Listener */}
-              <PaymentStatusListener
-                merchantOrderId={invoiceData.merchantOrderId}
-              />
             </div>
           )}
         </div>
