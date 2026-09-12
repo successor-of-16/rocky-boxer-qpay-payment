@@ -1,11 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function PaymentStatusListener({
   merchantOrderId,
@@ -17,39 +12,39 @@ export default function PaymentStatusListener({
   );
 
   useEffect(() => {
-    const channel = supabase
-      .channel(`qpay-response-${merchantOrderId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*", // Listen to both INSERT and UPDATE
-          schema: "public",
-          table: "qpay_responses",
-          filter: `merchant_order_id=eq.${merchantOrderId}`,
-        },
-        (payload) => {
-          const pStatus = (payload.new as any).status?.toUpperCase();
-          if (
-            pStatus === "SUCCESS" ||
-            pStatus === "PAID" ||
-            pStatus === "COMPLETED"
-          ) {
-            setStatus("success");
-          } else if (
-            pStatus === "FAILED" ||
-            pStatus === "CANCELLED" ||
-            pStatus === "ERROR"
-          ) {
-            setStatus("error");
-          }
-        },
-      )
-      .subscribe();
+    // Stop polling if we've already reached a terminal state
+    if (status === "success" || status === "error") return;
+
+    let isMounted = true;
+
+    const checkStatus = async () => {
+      try {
+        const res = await fetch(
+          `/api/check-payment-status?merchantOrderId=${encodeURIComponent(merchantOrderId)}`,
+        );
+
+        if (!res.ok) {
+          throw new Error("Failed to fetch payment status");
+        }
+
+        const data = await res.json();
+
+        if (isMounted) {
+          setStatus(data.status);
+        }
+      } catch (err) {
+        console.error("Failed to check payment status", err);
+      }
+    };
+
+    checkStatus(); // Initial immediate check
+    const intervalId = setInterval(checkStatus, 2000); // Poll every 2 seconds
 
     return () => {
-      supabase.removeChannel(channel);
+      isMounted = false;
+      clearInterval(intervalId);
     };
-  }, [merchantOrderId]);
+  }, [merchantOrderId, status]);
 
   if (status === "success") {
     return (

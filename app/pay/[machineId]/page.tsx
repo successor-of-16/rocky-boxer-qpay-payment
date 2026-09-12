@@ -28,7 +28,6 @@ const BANK_ICONS: Record<string, string> = {
   "qPay wallet": "https://qpay.mn/q/img/qpay-wallet.webp",
 };
 
-// Type definitions matching the GPG API response envelope
 interface GPGBankLink {
   name: string;
   code: string;
@@ -57,7 +56,6 @@ interface GPGInvoiceResponse {
   data: GPGInvoiceData;
 }
 
-// Helper for case-insensitive bank icon lookup
 const getBankIcon = (bankName: string) => {
   const key = Object.keys(BANK_ICONS).find(
     (k) => k.toLowerCase() === bankName.toLowerCase(),
@@ -166,13 +164,34 @@ export default async function PaymentPage({
   let invoiceData: GPGInvoiceData | null = null;
   let error: string | null = null;
 
-  try {
-    invoiceData = await getGPGInvoice(machineId);
-  } catch (err) {
+  const supabaseUrl = process.env.SUPABASE_URL!;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  // 1. Check if machine is online (network=true within the last 1.5 minutes / 90 seconds)
+  const ONLINE_THRESHOLD = new Date(Date.now() - 90000).toISOString();
+
+  const { data: recentCheck, error: checkError } = await supabase
+    .from("status_checks")
+    .select("id")
+    .eq("machine", machineId)
+    .gte("created_at", ONLINE_THRESHOLD)
+    .limit(1)
+    .maybeSingle();
+
+  if (!recentCheck) {
     error =
-      err instanceof Error
-        ? err.message
-        : "Төлбөрийн сонголтуудыг ачаалах үед тодорхойгүй алдаа гарлаа.";
+      "Машин офлайн байна эсвэл сүлжээний холболтгүй байна. QR код үүсгэх боломжгүй.";
+  } else {
+    // 2. Machine is verified online, proceed to get GPG Invoice
+    try {
+      invoiceData = await getGPGInvoice(machineId);
+    } catch (err) {
+      error =
+        err instanceof Error
+          ? err.message
+          : "Төлбөрийн сонголтуудыг ачаалах үед тодорхойгүй алдаа гарлаа.";
+    }
   }
 
   const qrImageSrc = invoiceData?.qr_image
@@ -214,10 +233,11 @@ export default async function PaymentPage({
             </p>
           ) : (
             <div className="space-y-6 flex flex-col items-center">
-              {/* Supabase Realtime Listener */}
+              {/* Server-side Polling Listener */}
               <PaymentStatusListener
                 merchantOrderId={invoiceData.merchantOrderId}
               />
+
               {/* QR Code Display: Hidden on mobile, visible on tablet (md) and desktop (lg) */}
               {qrImageSrc && (
                 <div className="hidden md:flex flex-col items-center space-y-2">
