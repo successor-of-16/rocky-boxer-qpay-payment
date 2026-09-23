@@ -159,6 +159,38 @@ export default async function PaymentPage({
 }: {
   params: Promise<{ machineId: string }>;
 }) {
+  // 1. Check for maintenance mode first to bypass all DB/API calls
+  if (process.env.MAINTENANCE === "1") {
+    return (
+      <main className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden p-8 text-center">
+          <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-yellow-100 mb-4">
+            <svg
+              className="h-8 w-8 text-yellow-600"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">
+            Засвар үйлчилгээ хийгдэж байна
+          </h1>
+          <p className="text-gray-600">
+            Системд техник засвар үйлчилгээ хийгдэж байна. Түр хүлээнэ үү, бид
+            удахгүй хэвийн ажиллагаанд орно.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
   const { machineId } = await params;
 
   let invoiceData: GPGInvoiceData | null = null;
@@ -168,7 +200,7 @@ export default async function PaymentPage({
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
   const supabase = createClient(supabaseUrl, supabaseKey);
 
-  // 1. Check if machine is online (network=true within the last 1.5 minutes / 90 seconds)
+  // 2. Check if machine is online (network=true within the last 1.5 minutes / 90 seconds)
   const ONLINE_THRESHOLD = new Date(Date.now() - 90000).toISOString();
 
   const { data: recentCheck, error: checkError } = await supabase
@@ -183,7 +215,7 @@ export default async function PaymentPage({
     error =
       "Машин офлайн байна эсвэл сүлжээний холболтгүй байна. QR код үүсгэх боломжгүй.";
   } else {
-    // 2. Machine is verified online, proceed to get GPG Invoice
+    // 3. Machine is verified online, proceed to get GPG Invoice
     try {
       invoiceData = await getGPGInvoice(machineId);
     } catch (err) {
@@ -276,7 +308,7 @@ export default async function PaymentPage({
                             alt={bank.name}
                             width={32}
                             height={32}
-                            className="rounded object-contain bg-white flex-shrink-0"
+                            className="rounded object-contain bg-white shrink-0"
                             unoptimized
                           />
                           <div className="flex-1 min-w-0">
